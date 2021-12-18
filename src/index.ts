@@ -1,5 +1,5 @@
 import { Client } from 'discord.js';
-import { Contract, utils } from 'ethers';
+import { Contract, utils, ContractTransaction } from 'ethers';
 import { DefenderRelaySigner, DefenderRelayProvider } from 'defender-relay-client/lib/ethers';
 import dotenv from 'dotenv';
 
@@ -36,6 +36,7 @@ const abi = [
 ];
 
 const hasClaimed: { [key: string]: boolean } = {};
+let isBusy = false;
 
 client.on('ready', () => {
   console.log(`Logged in as ${client.user?.id}`);
@@ -43,6 +44,11 @@ client.on('ready', () => {
 
 client.on('messageCreate', async (msg) => {
   if (msg.content.includes('!faucet')) {
+    if (isBusy) {
+      msg.reply('Please wait for your turn :eyes:');
+      return;
+    }
+
     const [, address] = msg.content.split(' ');
 
     if (hasClaimed[address]) {
@@ -51,16 +57,20 @@ client.on('messageCreate', async (msg) => {
     }
 
     if (utils.isAddress(address)) {
+      isBusy = true;
       const contract = new Contract('0x883cde7dadE9631E4a951Ca16fd3CA2fb05c5a62', abi, signer);
 
-      msg.reply(`Sending testnet tokens to ${address.substring(0, 5)}...${address.substring(address.length - 5, address.length - 1)} :ok_hand:`);
-
-      const tx = await contract.mint(address);
-      const receipt = await tx.wait();
-
-      console.log('done!', receipt);
-
-      hasClaimed[address] = true;
+      try {
+        const tx = await contract.mint(address) as ContractTransaction;
+        msg.reply(`Sending testnet tokens https://rinkeby.etherscan.io/tx/${tx.hash} :clap:`);
+        await tx.wait();
+        hasClaimed[address] = true;
+        console.log('done!');
+      } catch (e) {
+        console.error(e);
+      } finally {
+        isBusy = false;
+      }
     } else {
       msg.reply('Can\'t read your address... :frowning:');
     }
